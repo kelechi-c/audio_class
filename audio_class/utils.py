@@ -1,4 +1,5 @@
 import librosa
+import numpy as np
 import os
 import torchaudio
 from pydub import AudioSegment
@@ -10,13 +11,10 @@ class config:
     batch_size = 32
     lr = 1e-3
     max_duration = 30
-    sample_rate = 16000
+    sample_rate = 44100
     epochs = 50
     num_classes = 18
-
-
-feature_extractor = WhisperFeatureExtractor.from_pretrained(
-    "openai/whisper-small")
+    split = 15000
 
 
 def load_audio(file: str):
@@ -27,25 +25,25 @@ def load_audio(file: str):
 
     waveform, sr = librosa.load(file, sr=config.sample_rate)
 
-    return waveform
+    return waveform, sr
 
 
-def prepare_dataset(sample):
-    audio_sample = sample["audio"]
-    audio_feature = feature_extractor(
-        audio_sample["array"], sampling_rate=audio_sample["sampling_rate"], padding=True
-    )
+def pad_audio(audio: np.array, target_length: int):
+    padding_needed = target_length - len(audio)
+    if padding_needed > 0:
+        return np.pad(audio, (0, padding_needed), mode="reflect")
 
-    return audio_feature
+    return audio
 
 
 def display_melspec(audio):
     array, sr = audio["array"], audio["sampling_rate"]
 
-    specgram = librosa.feature.melspectrogram(
-        y=array, sr=sr, n_mels=128, fmax=8000)
+    specgram = librosa.feature.melspectrogram(y=array, sr=sr, n_mels=128, fmax=8000)
+    specgram = librosa.power_to_db(specgram, ref=np.max)
 
     plt.figure().set_figwidth(12)
-    librosa.display.specshow(specgram, x_axis="time",
-                             y_axis="mel", sr=sr, fmax=8000)
+    librosa.display.specshow(specgram, x_axis="time", y_axis="mel", sr=sr, fmax=8000)
     plt.colorbar()
+
+    return specgram
