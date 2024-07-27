@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-import torchvision
+from utils import config
 
 
 class MusiClass(nn.Module):
@@ -24,6 +24,7 @@ class MusiClass(nn.Module):
             nn.Linear(16384, 128),
             nn.Dropout2d(0.1),
             nn.ReLU(),
+            nn.BatchNorm2d(128),
             nn.Linear(128, out_classes),
         )
 
@@ -33,3 +34,6 @@ class MusiClass(nn.Module):
         x = self.linear_fc(x)
 
         return x
+
+
+classifier = MusiClass().to(config.device)
