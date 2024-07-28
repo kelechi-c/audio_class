@@ -35,7 +35,7 @@ class MusicData(Dataset):
         return audio_tensor, label
 
 
-music_genre_data = MusicData().to(device)
+music_genre_data = MusicData().to(config.device)
 
 train_size = math.floor(len(music_genre_data) * config.train_split)
 val_size = len(music_genre_data) - train_size
