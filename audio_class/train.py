@@ -1,14 +1,16 @@
 import torch
+import os
 from torch import nn, optim
 import wandb
 from utils import config
 from tqdm.auto import tqdm
 from audio_classifier import MusiClass
-
+from dataloader import train_loader, valid_loader
 
 classifier = MusiClass()
 model = classifier.to(config.device)
-criterion = nn.CrossEntropyLoss()
+
+criterion = nn.CrossEntropyLoss()  # loss function
 optimizer = optim.Adam(params=classifier.parameters(), lr=config.lr)
 print(len(classifier.parameters()))
 
@@ -16,66 +18,61 @@ epochs = config.num_epochs
 
 # initilaize wandb
 wandb.login()
-run = wandb.init(project="musiclass", name="musiclass_1")
+train_run = wandb.init(project="musiclass", name="musiclass_1")
 wandb.watch(classifier, log_freq=100)
 
 
-os.mkdir(config.model_output_path)
+os.mkdir(config.model_outpath)
 output_path = os.path.join(os.getcwd(), config.model_output_path)
-image_folder = "/kaggle/input/shiryoku-test/test_images"
 
 
-def train_step(train_loader, model):
+def train_step(train_loader, model, device=config.device):
     total_correct = 0
     total_samples = 0
 
-    for _, (images, captions, lengths) in tqdm(enumerate(train_loader)):
-        images = images.to(device)
-        captions = captions.to(device)
-        targets = pack_padded_sequence(captions, lengths, batch_first=True)[0]
+    for _, (audio, label) in tqdm(enumerate(train_loader)):
+        audio = audio.to(device)
+        label = label.to(device)
 
-        model_outputs = model(images, captions, lengths)
+        model_outputs = model(audio)
 
         _, predicted = torch.max(model_outputs, 1)
 
-        total_correct += (predicted == targets).sum().item()
-        total_samples += targets.size(0)
+        total_correct += (predicted == label).sum().item()
+        total_samples += label.size(0)
+
+        print(f"total samples {total_samples}")
 
         accuracy = 100 * total_correct / total_samples
-        train_loss = criterion(model_outputs, targets)
+        train_loss = criterion(model_outputs, label)
 
-        model.zero_grad()
+        optimizer.zero_grad()
         train_loss.backwards()
         optimizer.step()
 
     return accuracy, train_loss
 
 
-def validation_step(model, valid_loader):
+def validation_step(model, valid_loader, device=config.device):
     val_loss = 0.0
-    total_correct = 0
-    total_samples = 0
     model.eval()
 
     with torch.no_grad():
-        for _, (images, captions, lengths) in tqdm(enumerate(valid_loader)):
-            images = images.to(device)
-            captions = captions.to(device)
-            targets = pack_padded_sequence(captions, lengths, batch_first=True)[0]
+        for _, (audio, label) in tqdm(enumerate(train_loader)):
+            audio = audio.to(device)
+            label = label.to(device)
 
-            # Update the running total of correct predictions and samples
-            model_outputs = model(images, captions, lengths)
+            model_outputs = model(audio)
 
             _, predicted = torch.max(model_outputs, 1)
-            total_correct += (predicted == targets).sum().item()
-            total_samples += targets.size(0)
 
-            val_accuracy = 100 * total_correct / total_samples
+            val_loss = criterion(model_outputs, label)
 
-            loss = criterion(model_outputs, targets)
-            val_loss += loss.item()
+            optimizer.zero_grad()
+            val_loss.backwards()
+            optimizer.step()
 
-    return val_accuracy, val_loss
+    return val_loss
 
 
 def training_loop(model, train_loader, valid_loader, epochs=epochs):
@@ -83,13 +80,10 @@ def training_loop(model, train_loader, valid_loader, epochs=epochs):
     for epoch in tqdm(range(epochs)):
         print(f"Training epoch {epoch}")
         train_acc, train_loss = train_step(train_loader, model)
-        valid_acc, valid_loss = validation_step(model, valid_loader)
-
-        for image_file in os.listdir(image_folder):
-            sample_run(os.path.join(image_folder, image_file), model, device)
+        valid_loss = validation_step(model, valid_loader)
 
         print(
-            f"Epoch {epoch} of {epochs}, train_accuracy: {train_acc:.2f}, train_loss: {train_loss.item():.4f}, valid_accuracy: {valid_acc:.2f}, val_loss: {train_loss.item():.2f}"
+            f"Epoch {epoch} of {epochs}, train_accuracy: {train_acc:.4f}, train_loss: {train_loss.item():.4f},  val_loss: {train_loss.item():.2f}"
         )
 
         checkpoint = {
@@ -98,20 +92,12 @@ def training_loop(model, train_loader, valid_loader, epochs=epochs):
             "optimizer_state_dict": optimizer.state_dict(),
         }
 
-        if epoch % 5 == 0:
-            torch.save(
-                checkpoint, os.path.join(output_path, f"caption_model_{epoch}.pth")
-            )
-            print(f"Saved model checkpoint @ epoch {epoch}")
-
-        wandb.log(
-            {
-                "accuracy": train_acc,
-                "loss": train_loss,
-                "valid_accuracy": valid_acc,
-                "val_loss": valid_loss,
-            }
+        torch.save(
+            checkpoint, os.path.join(output_path, f"musiclass_model_{epoch}.pth")
         )
+        print(f"Saved model checkpoint @ epoch {epoch}")
+
+        wandb.log({"accuracy": train_acc, "loss": train_loss, "val_loss": valid_loss})
         print(f"Epoch @ {epoch} complete!")
 
     print(
@@ -119,8 +105,8 @@ def training_loop(model, train_loader, valid_loader, epochs=epochs):
     )
 
     torch.save(
-        model.state_dict(), os.path.join(output_path, f"{Config.model_filename}")
+        model.state_dict(), os.path.join(output_path, f"{config.model_filename}")
     )
 
 
-training_loop(shiryoku_model, train_loader, valid_loader)
+training_loop(classifier, train_loader, valid_loader)
