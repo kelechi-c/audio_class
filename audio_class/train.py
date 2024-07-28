@@ -2,19 +2,21 @@ import torch
 import os
 from torch import nn, optim
 import wandb
-from utils import config
+from utils import config, count_params
 from tqdm.auto import tqdm
 from audio_classifier import MusiClass
 from dataloader import train_loader, valid_loader
 
 classifier = MusiClass()
-model = classifier.to(config.device)
+classifier = classifier.to(config.device)
 
 criterion = nn.CrossEntropyLoss()  # loss function
 optimizer = optim.Adam(params=classifier.parameters(), lr=config.lr)
-print(len(classifier.parameters()))
+param_count = count_params(classifier)
 
-epochs = config.num_epochs
+print(f"Model parameters => {param_count}")
+
+epochs = config.epochs
 
 # initilaize wandb
 wandb.login()
@@ -23,7 +25,7 @@ wandb.watch(classifier, log_freq=100)
 
 
 os.mkdir(config.model_outpath)
-output_path = os.path.join(os.getcwd(), config.model_output_path)
+output_path = os.path.join(os.getcwd(), config.model_outpath)
 
 
 def train_step(train_loader, model, device=config.device):
@@ -58,13 +60,11 @@ def validation_step(model, valid_loader, device=config.device):
     model.eval()
 
     with torch.no_grad():
-        for _, (audio, label) in tqdm(enumerate(train_loader)):
+        for _, (audio, label) in tqdm(enumerate(valid_loader)):
             audio = audio.to(device)
             label = label.to(device)
 
             model_outputs = model(audio)
-
-            _, predicted = torch.max(model_outputs, 1)
 
             val_loss = criterion(model_outputs, label)
 

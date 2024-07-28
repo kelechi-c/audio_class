@@ -16,13 +16,15 @@ class config:
     train_split = 0.9
     dataset_id = "lewtun/music_genres"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_outpath = "musiclass"
+    model_filename = "musiclass.pth"
 
 
 def load_audio(file: str):
     if file.endswith(".mp3"):
         audio = AudioSegment.from_mp3(file)
-
-        file = f'{file.split('.')[0]}.wav'
+        fname = file.split(".")[0]
+        file = f"{fname}.wav"
         audio.export(file)
 
     waveform, sr = librosa.load(file, sr=config.sample_rate)
@@ -39,7 +41,7 @@ def get_spectrogram(audio):
     return specgram
 
 
-def pad_audio(audio: np.array, target_length: int):
+def pad_audio(audio: np.ndarray, target_length: int):
     padding_needed = target_length - len(audio)
     if padding_needed > 0:
         return np.pad(audio, (0, padding_needed), mode="reflect")
@@ -58,3 +60,17 @@ def display_melspec(audio):
     plt.colorbar()
 
     return specgram
+
+
+def count_params(model: torch.nn.Module):
+    p_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    return p_count
+
+
+def resize_audio(audio, target_length):
+    if len(audio) < target_length:
+        audio = pad_audio(audio, target_length)
+    else:
+        audio = audio[:target_length]
+    return audio
