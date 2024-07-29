@@ -37,8 +37,7 @@ def get_spectrogram(audio):
     array, sr = audio["array"], audio["sampling_rate"]
     target_shape = (128, config.audio_length)
 
-    specgram = librosa.feature.melspectrogram(
-        y=array, sr=sr, n_mels=128, fmax=8000)
+    specgram = librosa.feature.melspectrogram(y=array, sr=sr, n_mels=128, fmax=8000)
     specgram = librosa.power_to_db(specgram, ref=np.max)
 
     specgram = librosa.util.fix_length(specgram, size=target_shape[1], axis=1)
@@ -46,27 +45,15 @@ def get_spectrogram(audio):
     return specgram
 
 
-def pad_audio(audio: np.ndarray, target_length: int):
-    padding_needed = target_length - len(audio)
-    if padding_needed > 0:
-        return np.pad(audio, (0, padding_needed), mode="reflect")
-
-    return audio
-
-
 def display_melspec(audio):
     array, sr = audio["array"], audio["sampling_rate"]
 
-    specgram = librosa.feature.melspectrogram(
-        y=array, sr=sr, n_mels=128, fmax=8000)
+    specgram = librosa.feature.melspectrogram(y=array, sr=sr, n_mels=128, fmax=8000)
     specgram = librosa.power_to_db(specgram, ref=np.max)
 
     plt.figure().set_figwidth(12)
-    librosa.display.specshow(specgram, x_axis="time",
-                             y_axis="mel", sr=sr, fmax=8000)
+    librosa.display.specshow(specgram, x_axis="time", y_axis="mel", sr=sr, fmax=8000)
     plt.colorbar()
-
-    return specgram
 
 
 def count_params(model: torch.nn.Module):
