@@ -41,17 +41,27 @@ def training_loop(
         print(f"Training epoch {epoch}")
 
         train_loss = 0.0
+        for x, (audio, label) in tqdm(enumerate(train_loader)):
+            if x % 10 == 0:  # every 10 iterations
+                torch.cuda.empty_cache()
 
-        for _, (audio, label) in tqdm(enumerate(train_loader)):
-            model_outputs = model(audio)
+            # Mixed precision training
 
-            train_loss = criterion(model_outputs, label)
-            optimizer.zero_grad()
+            with autocast():
+                outputs = model(audio)
+                train_loss = criterion(outputs, label.long())
 
-            train_loss.backwards()
-            optimizer.step()
+                train_loss = train_loss / config.grad_acc_step  # Normalize the loss
 
-            torch.cuda.empty_cache()
+            # Scales loss. Calls backward() on scaled loss to create scaled gradients.
+            scaler.scale(train_loss).backward()
+
+            if (x + 1) % config.grad_acc_step == 0:
+                # Unscales the gradients of optimizer's assigned params in-place
+                scaler.step(optimizer)
+                # Updates the scale for next iteration
+                scaler.update()
+                optimizer.zero_grad()
 
         print(f"Epoch {epoch} of {epochs}, train_loss: {train_loss.item():.4f}")
 
@@ -71,9 +81,7 @@ def training_loop(
 
         print(f"Epoch @ {epoch} complete!")
 
-    print(
-        f"End metrics for run of {epochs}, accuracy: {train_acc:.2f}, train_loss: {train_loss.item():.4f},valid_accuracy: {valid_acc:.2f}, valid_loss: {valid_loss:.4f}"
-    )
+    print(f"End metrics for run of {epochs}, train_loss: {train_loss.item():.4f}")
 
     torch.save(
         model.state_dict(), os.path.join(output_path, f"{config.model_filename}")
@@ -82,5 +90,3 @@ def training_loop(
 
 training_loop()
 print("music classifier training complete")
-
-training_loop(classifier, train_loader)
