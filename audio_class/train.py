@@ -1,14 +1,18 @@
 import torch
 import os
 from torch import nn, optim
+from torch.cuda.amp import autocast, GradScaler
 import wandb
 from utils import config, count_params
 from tqdm.auto import tqdm
 from audio_classifier import MusiClass
-from dataloader import train_loader, valid_loader
+from dataloader import train_loader
 
 classifier = MusiClass()
 classifier = classifier.to(config.device)
+
+scaler = GradScaler()
+
 
 criterion = nn.CrossEntropyLoss()  # loss function
 optimizer = optim.Adam(params=classifier.parameters(), lr=config.lr)
@@ -28,63 +32,28 @@ os.mkdir(config.model_outpath)
 output_path = os.path.join(os.getcwd(), config.model_outpath)
 
 
-def train_step(train_loader, model, device=config.device):
-    total_correct = 0
-    total_samples = 0
-
-    for _, (audio, label) in tqdm(enumerate(train_loader)):
-        audio = audio.to(device)
-        label = label.to(device)
-
-        model_outputs = model(audio)
-
-        _, predicted = torch.max(model_outputs, 1)
-
-        total_correct += (predicted == label).sum().item()
-        total_samples += label.size(0)
-
-        print(f"total samples {total_samples}")
-
-        accuracy = 100 * total_correct / total_samples
-        train_loss = criterion(model_outputs, label)
-
-        optimizer.zero_grad()
-        train_loss.backwards()
-        optimizer.step()
-
-    return accuracy, train_loss
-
-
-def validation_step(model, valid_loader, device=config.device):
-    val_loss = 0.0
-    model.eval()
-
-    with torch.no_grad():
-        for _, (audio, label) in tqdm(enumerate(valid_loader)):
-            audio = audio.to(device)
-            label = label.to(device)
-
-            model_outputs = model(audio)
-
-            val_loss = criterion(model_outputs, label)
-
-            optimizer.zero_grad()
-            val_loss.backwards()
-            optimizer.step()
-
-    return val_loss
-
-
-def training_loop(model, train_loader, valid_loader, epochs=epochs):
+def training_loop(
+    model=classifier, train_loader=train_loader, epochs=epochs, config=config
+):
     model.train()
     for epoch in tqdm(range(epochs)):
+        torch.cuda.empty_cache()
         print(f"Training epoch {epoch}")
-        train_acc, train_loss = train_step(train_loader, model)
-        valid_loss = validation_step(model, valid_loader)
 
-        print(
-            f"Epoch {epoch} of {epochs}, train_accuracy: {train_acc:.4f}, train_loss: {train_loss.item():.4f},  val_loss: {train_loss.item():.2f}"
-        )
+        train_loss = 0.0
+
+        for _, (audio, label) in tqdm(enumerate(train_loader)):
+            model_outputs = model(audio)
+
+            train_loss = criterion(model_outputs, label)
+            optimizer.zero_grad()
+
+            train_loss.backwards()
+            optimizer.step()
+
+            torch.cuda.empty_cache()
+
+        print(f"Epoch {epoch} of {epochs}, train_loss: {train_loss.item():.4f}")
 
         checkpoint = {
             "epoch": epoch,
@@ -95,9 +64,11 @@ def training_loop(model, train_loader, valid_loader, epochs=epochs):
         torch.save(
             checkpoint, os.path.join(output_path, f"musiclass_model_{epoch}.pth")
         )
+
         print(f"Saved model checkpoint @ epoch {epoch}")
 
-        wandb.log({"accuracy": train_acc, "loss": train_loss, "val_loss": valid_loss})
+        wandb.log({"loss": train_loss})
+
         print(f"Epoch @ {epoch} complete!")
 
     print(
@@ -109,4 +80,7 @@ def training_loop(model, train_loader, valid_loader, epochs=epochs):
     )
 
 
-training_loop(classifier, train_loader, valid_loader)
+training_loop()
+print("music classifier training complete")
+
+training_loop(classifier, train_loader)
