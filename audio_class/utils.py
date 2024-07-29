@@ -14,6 +14,7 @@ class config:
     num_classes = 18
     split = 15000
     train_split = 0.9
+    audio_length = 2000
     dataset_id = "lewtun/music_genres"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_outpath = "musiclass"
@@ -34,9 +35,13 @@ def load_audio(file: str):
 
 def get_spectrogram(audio):
     array, sr = audio["array"], audio["sampling_rate"]
+    target_shape = (128, config.audio_length)
 
-    specgram = librosa.feature.melspectrogram(y=array, sr=sr, n_mels=128, fmax=8000)
+    specgram = librosa.feature.melspectrogram(
+        y=array, sr=sr, n_mels=128, fmax=8000)
     specgram = librosa.power_to_db(specgram, ref=np.max)
+
+    specgram = librosa.util.fix_length(specgram, size=target_shape[1], axis=1)
 
     return specgram
 
@@ -52,11 +57,13 @@ def pad_audio(audio: np.ndarray, target_length: int):
 def display_melspec(audio):
     array, sr = audio["array"], audio["sampling_rate"]
 
-    specgram = librosa.feature.melspectrogram(y=array, sr=sr, n_mels=128, fmax=8000)
+    specgram = librosa.feature.melspectrogram(
+        y=array, sr=sr, n_mels=128, fmax=8000)
     specgram = librosa.power_to_db(specgram, ref=np.max)
 
     plt.figure().set_figwidth(12)
-    librosa.display.specshow(specgram, x_axis="time", y_axis="mel", sr=sr, fmax=8000)
+    librosa.display.specshow(specgram, x_axis="time",
+                             y_axis="mel", sr=sr, fmax=8000)
     plt.colorbar()
 
     return specgram
@@ -66,11 +73,3 @@ def count_params(model: torch.nn.Module):
     p_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     return p_count
-
-
-def resize_audio(audio, target_length):
-    if len(audio) < target_length:
-        audio = pad_audio(audio, target_length)
-    else:
-        audio = audio[:target_length]
-    return audio
