@@ -1,10 +1,7 @@
-from matplotlib.pyplot import get
 import torch
-import math
 from datasets import load_dataset
-from torch.utils.data import Dataset, DataLoader, random_split, IterableDataset
+from torch.utils.data import Dataset, DataLoader, IterableDataset
 from utils import config, get_spectrogram
-from tqdm.auto import tqdm
 
 
 hfdata = load_dataset(config.dataset_id, split="train", streaming=True)
@@ -14,17 +11,27 @@ hfdata = hfdata.take(config.split)
 class MusicData(IterableDataset):
     def __init__(self, dataset=hfdata):
         self.dataset = dataset
+        self.target_shape = 1323119
 
     def __iter__(self):
         for item in self.dataset:
-            spectrogram = get_spectrogram(item["audio"])
+            audio = item["audio"]["array"]
 
-            mspec = torch.tensor(spectrogram, dtype=torch.bfloat16)
-            label = torch.tensor(item["genre_id"], dtype=torch.bfloat16)
+            audio = librosa.resample(
+                audio, orig_sr=item["audio"]["sampling_rate"], target_sr=config.small_sr
+            )
+            audio = librosa.util.fix_length(
+                audio, size=self.target_shape, axis=0)
 
-            yield mspec, label
+            label = item["genre_id"]
+
+            yield audio, label
 
 
-music_genre_data = MusicData()
+m_data = MusicData()
 
-train_loader = DataLoader(music_genre_data, batch_size=config.batch_size, shuffle=True)
+train_loader = DataLoader(m_data, batch_size=config.batch_size)
+print("dataloader created")
+
+x = next(iter(train_loader))[0]
+print(x)
