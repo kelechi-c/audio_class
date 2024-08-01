@@ -29,12 +29,8 @@ class MusiClass(nn.Module):
             sample_input = torch.randn(1, 1, 128, 937)
             conv_output = self.audio_convnet(sample_input)
             fs = conv_output.view(1, -1).size(1)
-            print(f"fs => {fs}")
 
-        self.linear_fc = nn.Sequential(
-            nn.Linear(fs, 256),  # 958464
-            nn.ReLU(),
-        )
+        self.linear_fc = nn.Sequential(nn.Linear(fs, 256), nn.ReLU())
 
         self.l2 = nn.Linear(256, out_classes)
 
@@ -42,10 +38,8 @@ class MusiClass(nn.Module):
         if not isinstance(audio, np.ndarray):
             audio = audio.cpu().numpy()
 
-        n_frames = int(librosa.time_to_frames(
-            config.max_duration, sr=config.small_sr))
+        n_frames = int(librosa.time_to_frames(config.max_duration, sr=config.small_sr))
         audio = audio.squeeze(0)
-        print(f"spec input {audio.shape}")
         specgram = librosa.feature.melspectrogram(
             y=audio, sr=config.small_sr, n_mels=128, fmax=8000
         )
@@ -57,22 +51,20 @@ class MusiClass(nn.Module):
             specgram = specgram[:, :n_frames]
 
         specgram = torch.tensor(specgram, dtype=config.dtype).to(config.device)
-        print(f"spec out {specgram.shape}")
 
         return specgram
 
     def forward(self, x: torch.Tensor):
-        print(x.shape)
-        print(x.dim())
         x = self._spectrogram(x)
         x = x.unsqueeze(0)  # Add channel dimension
 
+        x = self.audio_convnet(x)
+
         x = torch.flatten(x)
 
-        print(f"flat shape {x.shape}")
         x = self.linear_fc(x)
         x = self.l2(x)
-        x = x.unsqueeze(0)
+        x = x.unsqueeze(0)  # batch dimension
         return x  # Shape: (batch_size, out_classes)
 
 
@@ -87,7 +79,6 @@ torch.cuda.empty_cache()
 
 k = classifier(x)
 
-# clear cache to free up memory
 torch.cuda.empty_cache()
 gc.collect()
 
