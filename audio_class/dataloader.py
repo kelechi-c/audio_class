@@ -1,8 +1,7 @@
-import torch
 from datasets import load_dataset
-from torch.utils.data import Dataset, DataLoader, IterableDataset
-from utils import config, get_spectrogram
-
+from torch.utils.data import DataLoader, IterableDataset
+from utils import config
+import librosa
 
 hfdata = load_dataset(config.dataset_id, split="train", streaming=True)
 hfdata = hfdata.take(config.split)
@@ -11,7 +10,7 @@ hfdata = hfdata.take(config.split)
 class MusicData(IterableDataset):
     def __init__(self, dataset=hfdata):
         self.dataset = dataset
-        self.target_shape = 1323119
+        self.target_shape = config.small_target_size
 
     def __iter__(self):
         for item in self.dataset:
@@ -30,7 +29,9 @@ class MusicData(IterableDataset):
 
 m_data = MusicData()
 
-train_loader = DataLoader(m_data, batch_size=config.batch_size)
+train_loader = DataLoader(
+    m_data, batch_size=config.batch_size
+)  # collate_fn=collate_fn)
 print("dataloader created")
 
 x = next(iter(train_loader))[0]

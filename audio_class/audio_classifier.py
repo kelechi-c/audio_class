@@ -1,5 +1,6 @@
 import torch
 import librosa
+import gc
 import numpy as np
 from torch import nn
 from utils import config
@@ -23,15 +24,17 @@ class MusiClass(nn.Module):
             nn.MaxPool2d(2, 2),
             nn.ReLU(),
         )
-
         # Dynamically calculate the size of the flattened conv output
         with torch.no_grad():
-            sample_input = torch.randn(1, 1, 128, 2000)
+            sample_input = torch.randn(1, 1, 128, 937)
             conv_output = self.audio_convnet(sample_input)
-            flattened_size = conv_output.view(1, -1).size(1)
+            fs = conv_output.view(1, -1).size(1)
+            print(f"fs => {fs}")
 
         self.linear_fc = nn.Sequential(
-            nn.Linear(flattened_size, 256), nn.ReLU())
+            nn.Linear(fs, 256),  # 958464
+            nn.ReLU(),
+        )
 
         self.l2 = nn.Linear(256, out_classes)
 
@@ -42,6 +45,7 @@ class MusiClass(nn.Module):
         n_frames = int(librosa.time_to_frames(
             config.max_duration, sr=config.small_sr))
         audio = audio.squeeze(0)
+        print(f"spec input {audio.shape}")
         specgram = librosa.feature.melspectrogram(
             y=audio, sr=config.small_sr, n_mels=128, fmax=8000
         )
@@ -53,30 +57,39 @@ class MusiClass(nn.Module):
             specgram = specgram[:, :n_frames]
 
         specgram = torch.tensor(specgram, dtype=config.dtype).to(config.device)
+        print(f"spec out {specgram.shape}")
+
         return specgram
 
     def forward(self, x: torch.Tensor):
+        print(x.shape)
+        print(x.dim())
         x = self._spectrogram(x)
-        x = x.unsqueeze(1)  # Add channel dimension
+        x = x.unsqueeze(0)  # Add channel dimension
 
-        x = self.audio_convnet(x)
-        x = x.view(x.size(0), -1)  # Flatten
+        x = torch.flatten(x)
+
+        print(f"flat shape {x.shape}")
         x = self.linear_fc(x)
         x = self.l2(x)
+        x = x.unsqueeze(0)
         return x  # Shape: (batch_size, out_classes)
 
 
 classifier = MusiClass()
 
-classifier = classifier.to(torch.bfloat16).to(config.device)
+classifier = classifier.to(config.dtype).to(config.device)
 classifier = torch.compile(classifier)
 
 x = next(iter(train_loader))[0]
 print(x.shape)
+torch.cuda.empty_cache()
 
 k = classifier(x)
 
+# clear cache to free up memory
 torch.cuda.empty_cache()
+gc.collect()
 
 print(f"model pred shape => {k.shape}")
 print(k)
